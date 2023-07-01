@@ -1,0 +1,629 @@
+```{r}
+library(tidyverse)
+library(magrittr)
+library(reshape2)
+library(Hmisc)
+library(ggpubr)
+library(corrplot)
+library(car)
+library(leaps)
+library(estimatr)
+library(robustbase)
+library(olsrr)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(caret)
+```
+
+```{r}
+me_cars<- read.csv("C:/Users/gugli/Desktop/Università/Materiale/SL/Project/Car in the middle east.csv")
+head(me_cars)
+```
+```{r}
+me_cars %>% View()
+```
+
+
+```{r}
+glimpse(me_cars)
+```
+
+### DATA PREPROCESSING
+
+```{r}
+
+#Filtering out the null values
+me_cars<-me_cars %>% filter(price != " TBD " &
+                              Cylinders != "N/A" &
+                              Trunk.Capacity..liters. != "N/A" &
+                              Trunk.Capacity..liters. != "Null")
+
+
+#Changing the type of some columns (from char to dbl) and removing strange values
+
+me_cars$price <- gsub(",", "", me_cars$price) %>% as.numeric() %>% round(2)
+
+me_cars$Cylinders <- as.numeric(me_cars$Cylinders)
+
+me_cars$Trunk.Capacity..liters. <- gsub(" \\(.*\\)", "", me_cars$Trunk.Capacity..liters.) %>% as.numeric()
+
+me_cars$Fuel.Tank.Capacity..liters. <- gsub(" \\(.*\\)", "",me_cars$Fuel.Tank.Capacity..liters.) %>% as.numeric()
+
+me_cars$Seating.Capacity <- gsub("Seater", "",me_cars$Seating.Capacity) %>% as.numeric()
+
+me_cars$Wheelbase..meters.<- gsub("  ", "", me_cars$Wheelbase..meters.) %>% as.numeric() %>% round(2)
+
+me_cars$Torque..Nm.  %<>%  as.numeric
+
+me_cars$Length..meters. %<>% round(2)
+
+me_cars$Width..meters. %<>% round(2)
+
+me_cars$Height..meters. %<>% round(2)
+
+#Changing the type of other columns (from char to fact)
+
+me_cars$Drive.Type %<>% as.factor
+me_cars$Fuel.Type %<>% as.factor
+me_cars$Transmission %<>% as.factor
+me_cars$currency %<>% as.factor
+
+#Renaming some variables so that they are easier to understand
+
+me_cars <- me_cars %>% rename("Engine_Capacity"="Engine.Capacity..liters.",
+                              "Driving"="Drive.Type",
+                              "Fuel_Capacity"="Fuel.Tank.Capacity..liters.",
+                              "Liters_For_100km"="Fuel.Economy..L.100.Km.",
+                              "Fuel_Type"="Fuel.Type",
+                              "Horsepower"="Horsepower..bhp.",
+                              "Torque"="Torque..Nm.",
+                              "Top_Speed"="Top.Speed..Km.h.",
+                              "Seating_Capacity"="Seating.Capacity",
+                              "Acceleration_0100"="Acceleration.0.100.Km.h..sec.",
+                              "Length"="Length..meters.",
+                              "Width"="Width..meters.",
+                              "Height"="Height..meters.",
+                              "Wheelbase"="Wheelbase..meters.",
+                              "Trunk_Capacity"="Trunk.Capacity..liters.",
+                              "Price"="price",
+                              "Currency"="currency",
+                              "Name"="name")
+
+
+#EXCHANGE RATES RETRIEVED ON JUNE, FRIDAY 23th
+me_cars$PriceEURO<-ifelse(me_cars$Currency=="SAR", me_cars$Price*.25,
+                          ifelse(me_cars$Currency=="AED", me_cars$Price*.25,
+                                 ifelse(me_cars$Currency=="BHD", me_cars$Price*2.44,
+                                        ifelse(me_cars$Currency=="KWD", me_cars$Price*2.99,
+                                               ifelse(me_cars$Currency=="OMR", me_cars$Price*2.39, me_cars$price*.25)))))
+
+#Creating the column Area
+me_cars$Area<-ifelse(me_cars$Currency=="SAR", "Saudi Arabia",
+                          ifelse(me_cars$Currency=="AED", "UAE",
+                                 ifelse(me_cars$Currency=="BHD", "Bahrain",
+                                        ifelse(me_cars$Currency=="KWD", "Kuwait",
+                                               ifelse(me_cars$Currency=="OMR", "Oman", "Qatar")))))
+me_cars$Area %<>% as.factor
+```
+
+```{r}
+me_cars$Currency %>% unique()
+```
+
+
+
+In this way we obtained a nice dataset to work with.
+
+```{r}
+glimpse(me_cars)
+```
+
+### DATA EXPLORATION
+
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Area,-Price) %>% gather() %>% 
+  ggplot(aes(value)) + 
+    geom_boxplot(fill="#FF6600", color="black", outlier.colour = "#FF6600") + 
+    facet_wrap(~key, scales = 'free')
+```
+
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Area, -Price) %>% plot()
+```
+It is clear that there are a lot of outliers. It is important to remove the most extreme ones.
+The criterion used to decide which is an outlier and which is not is just common sense, i.e. it is impossible that a car is 4500m long.
+#### Outlier removal
+
+```{r}
+
+value = me_cars[,"Height"][me_cars[,"Height"]>500]
+me_cars[,"Height"][me_cars[,"Height"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+value = me_cars[,"Length"][me_cars[,"Length"]>500]
+me_cars[,"Length"][me_cars[,"Length"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+value = me_cars[,"Wheelbase"][me_cars[,"Wheelbase"]>500]
+me_cars[,"Wheelbase"][me_cars[,"Wheelbase"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+value = me_cars[,"Width"][me_cars[,"Width"]>500]
+me_cars[,"Width"][me_cars[,"Width"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+value = me_cars[,"Horsepower"][me_cars[,"Horsepower"]>1250]
+me_cars[,"Horsepower"][me_cars[,"Horsepower"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+
+value = me_cars[,"Trunk_Capacity"][me_cars[,"Trunk_Capacity"]>2500]
+me_cars[,"Trunk_Capacity"][me_cars[,"Trunk_Capacity"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+value = me_cars[,"PriceEURO"][me_cars[,"PriceEURO"]>750000]
+me_cars[,"PriceEURO"][me_cars[,"PriceEURO"] %in% value] = NA
+me_cars = drop_na(me_cars)
+
+#REMOVE DUPLICATES
+me_cars %<>% distinct() 
+```
+
+```{r}
+me_cars$Area %>% unique()
+```
+
+We see how the Area Qatar is no longer present. This means that all the values related to that Area were actually extreme outliers we had to remove.
+
+
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Price, -Area) %>% gather() %>% 
+  ggplot(aes(value)) + 
+    geom_boxplot(fill="#FF6600", color="black", outlier.colour = "#FF6600") + 
+    facet_wrap(~key, scales = 'free')
+```
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Area, -Price) %>% gather() %>% 
+  ggplot(aes(value)) +
+  geom_histogram(bins = 20, fill="#FF6600", color="black") +
+    facet_wrap(~key, scales = 'free') 
+```
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Price, -Area) %>% plot()
+```
+Now we have obtained a nice dataset to work with.
+
+#### Further data exploration
+```{r}
+me_cars %>% glimpse()
+```
+
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Price, -Area) %>% cor() %>% melt() %>% #here I am creating the correlation matrix between each other variable (excluding Sex) and "melting" it to creating a data frame which will be used to then create the ggplot 
+  ggplot(aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    geom_text(aes(Var1, Var2, label = round(value, 2)), size = 3, color="black") +
+      scale_fill_gradient2(low = "#FFFF66", high = "#FF6600",
+                         limit = c(-1,1), name="Correlation") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), 
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.background = element_blank())
+```
+```{r}
+me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Price, -Area) %>% cor() %>% corrplot(type = "full", 
+         tl.col = "black", tl.srt = 45)
+```
+We see how many variables are quite correlated with each other. This correlation will be better analysed later.
+
+
+## SUPERVISED LEARNING
+
+#### Tests for normality and linear regression
+
+```{r}
+me_cars %>% 
+  ggplot(aes(PriceEURO)) +
+  geom_density(linewidth=1)
+```
+Not normal at all. We try to take the log
+
+```{r}
+me_cars %>% 
+  ggplot(aes(log(PriceEURO))) +
+  geom_density(linewidth=1)+
+  stat_overlay_normal_density(color="red", linetype="dashed", linewidth=1)
+```
+Much better than before! Let's try to make statistical tests on this.
+
+To do so we are going to create a new dataset called "mec_stat", meaning Middle East Cars Stat without some of the useless variable we had in the original dataset.
+
+Then we create a ds for each of the 5 Areas, namely:
+- Bahrain (BR)
+- Kuwait (KW)
+- Oman (OM)
+- Saudi Arabia (SA)
+- United Arab Emirates (UAE)
+
+```{r}
+mec_stat<-me_cars %>% select(-Name,-Price, -Currency) #general ds for statistical analysis
+
+#a bit naive but necessary
+mec_statSA <- mec_stat %>% filter(Area=="Saudi Arabia") %>% select(-Area)
+mec_statUAE <- mec_stat %>% filter(Area=="UAE") %>% select(-Area)
+mec_statBR <- mec_stat %>% filter(Area=="Bahrain") %>% select(-Area)
+mec_statOM <- mec_stat %>% filter(Area=="Oman") %>% select(-Area)
+mec_statKW <- mec_stat %>% filter(Area=="Kuwait") %>% select(-Area)
+```
+
+```{r}
+qqnorm(mec_stat$PriceEURO)
+qqline(mec_stat$PriceEURO, col="red")
+```
+
+
+```{r}
+qqnorm(log(mec_stat$PriceEURO))
+qqline(log(mec_stat$PriceEURO), col="red")
+```
+Better but pretty useless.
+
+We now take the Shapiro-Wilk test to verify whether the distribution of the variables is normal or not.
+
+```{r}
+cat("Bahrain")
+shapiro.test(log(mec_statBR$PriceEURO))
+cat("\nKuwait")
+shapiro.test(log(mec_statKW$PriceEURO))
+cat("\nOman")
+shapiro.test(log(mec_statOM$PriceEURO))
+cat("\nSaudi Arabia")
+shapiro.test(log(mec_statSA$PriceEURO))
+cat("\nUnited Arab Emirates")
+shapiro.test(log(mec_statUAE$PriceEURO))
+```
+We can see that, apart from Oman, all the other distributions are not-gaussian.
+So we check for the distribution over the residuals which, by the way, are the important distribution to check for inference with linear regression.
+
+```{r}
+model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.)
+cat("\nBahrain")
+shapiro.test(model1BR$residuals)
+
+model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
+cat("\nKuwait")
+shapiro.test(model1KW$residuals)
+
+model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
+cat("\nOman")
+shapiro.test(model1OM$residuals)
+
+model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
+cat("\nSaudi Arabia")
+shapiro.test(model1SA$residuals)
+
+model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
+cat("\nUnited Arab Emirates")
+shapiro.test(model1UAE$residuals)
+```
+We see that Kuwait, Oman and UAE have normally distributed error while the other countries have not. In order to be consistent with the analysis I decided not to consider the linear regression since not all the results where unbiased.
+
+
+#### Could robust regression be the solution??
+What if we use Robust regression to get rid of some of the outliers?
+```{r}
+ols_plot_resid_lev(model1UAE)
+```
+
+```{r}
+#ROBUST LINEAR MODELS
+set.seed(1)
+model2BR=mec_statBR %>% lmrob(PriceEURO~.,.)
+model2KW=mec_statKW %>% lmrob(PriceEURO~.,.)
+model2OM=mec_statOM %>% lmrob(PriceEURO~.,.)
+model2SA=mec_statSA %>% lmrob(log(PriceEURO)~.,.)
+model2UAE=mec_statUAE %>% lmrob(PriceEURO~.,.)
+```
+I tried to use the Robust regression but unfortunately the algorithm was not able to converge for some variables. This implies that we do not have access to many information for some variables and that is unacceptable. Another method is needed.
+
+
+#### Further analysis is needed
+
+Now we initialize a function for computing the Vif (variance inflation factor) and for plotting its values.
+
+```{r}
+
+# VIF FUNCTION
+
+vif_func<-function(model_name, country){
+  modelvif=data.frame(vif(model_name)) #we compute the vif of the model
+  modelvif$row=row.names(modelvif) #we do some magic to let R know what we are working with
+  colnames(modelvif)[1] = "Vif"
+  
+  
+  #Plotting the Vif
+  modelvif %>%
+  ggplot(aes(row, Vif))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept = 5, linewidth=1, color="yellow")+
+  geom_hline(yintercept = 7.5, linewidth=1, color="orange")+
+  geom_hline(yintercept = 10, linewidth=1, color="red")+
+  scale_y_continuous(limits = c(0,30), breaks = seq(0,30,2.5), minor_breaks = NULL)+
+  labs(x=NULL, y=NULL, title = bquote(paste("Vif value per variable - Area: ",.(country))))+
+  coord_flip()+
+  theme_bw()
+
+}
+
+```
+
+
+We initialize also a function for obtaining the best subset possible.
+
+```{r}
+#BEST SUBSET MODEL
+best_sub<-function(ds,country){
+  best_sub<-regsubsets(formula= log(PriceEURO)~.,data = ds, nvmax = length(names(ds)), 
+                       method = "forward") #we do the subset
+  best_sub_summary<- best_sub %>% summary()
+  best_sub_summary$cp %>% which.min()
+  plot(best_sub, scale="Cp") #we plot the best one
+  title(main=country)
+}
+```
+
+We do again the regression for convenience.
+
+```{r}
+model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.,)
+model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
+model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
+model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
+model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
+```
+
+
+First we check the Vif for all the models and...
+```{r}
+vif_func(model1BR,"Bahrain")
+vif_func(model1KW,"Kuwait")
+vif_func(model1SA,"Saudi Arabia")
+vif_func(model1OM,"Oman")
+vif_func(model1UAE,"United Arab Emirates")
+```
+... we eliminate the most correlated variables:
+```{r}
+mec_statBR <- mec_statBR %>% select(-Torque, -Horsepower, -Wheelbase, -Length, -Engine_Capacity)
+mec_statKW <- mec_statKW %>% select(-Torque, -Length, -Horsepower, -Engine_Capacity, -Cylinders)
+mec_statSA <- mec_statSA %>% select(-Torque, -Length, -Horsepower, -Engine_Capacity, -Cylinders)
+mec_statOM <- mec_statOM %>% select(-Torque, -Length, -Horsepower,-Engine_Capacity)
+mec_statUAE <- mec_statUAE %>% select(-Torque, -Length, -Horsepower,-Cylinders)
+```
+
+
+Now, with the leftover variables, we compute the best possible subset for each model and...
+```{r}
+mec_statBR %>% best_sub("Bahrain")
+mec_statKW %>% best_sub("Kuwait")
+mec_statOM %>% best_sub("Oman")
+mec_statSA %>% best_sub("Saudi Arabia")
+mec_statUAE %>% best_sub("UAE")
+```
+... again we remove the not important ones and create some dummies if necessary.
+
+```{r}
+#Selecting only the important variables
+
+#BAHRAIN
+mec_statBR$DrivingFWD <-ifelse(mec_statBR$Driving=="Front Wheel Drive",1,0)
+mec_statBR$FT_Hybrid <-ifelse(mec_statBR$Fuel_Type=="Hybrid",1,0)
+mec_statBR$TransMan <-ifelse(mec_statBR$Transmission=="Manual",1,0)
+mec_statBR <- mec_statBR %>% select(-Driving, -Fuel_Type, -Transmission, -Seating_Capacity)
+
+#KUWAIT
+mec_statKW$DrivingFWD <-ifelse(mec_statKW$Driving=="Front Wheel Drive",1,0)
+mec_statKW$FT_Hybrid <-ifelse(mec_statKW$Fuel_Type=="Hybrid",1,0)
+mec_statKW <- mec_statKW %>% select(-Driving, -Fuel_Type,-Width)
+
+
+#OMAN
+mec_statOM$DrivingFWD <-ifelse(mec_statOM$Driving=="Front Wheel Drive",1,0)
+mec_statOM$FT_Petrol <-ifelse(mec_statOM$Fuel_Type=="Hybrid",0,1)
+mec_statOM$TransMan <-ifelse(mec_statOM$Transmission=="Manual",1,0)
+mec_statOM <- mec_statOM %>% select(-Driving, -Transmission, -Fuel_Type)
+
+#Saudi Arabia
+mec_statSA$DrivingFWD <-ifelse(mec_statSA$Driving=="Front Wheel Drive",1,0)
+mec_statSA$FT_Hybrid <-ifelse(mec_statSA$Fuel_Type=="Hybrid",1,0)
+mec_statSA <- mec_statSA %>% select(-Driving, -Liters_For_100km, -Fuel_Type, -Transmission)
+
+#United Arab Emirates
+mec_statUAE$DrivingFWD <-ifelse(mec_statUAE$Driving=="Front Wheel Drive",1,0)
+mec_statUAE$FT_Petrol <-ifelse(mec_statUAE$Fuel_Type=="Hybrid",0,1)
+mec_statUAE$TransMan <-ifelse(mec_statUAE$Transmission=="Manual",1,0)
+mec_statUAE <- mec_statUAE %>% select(-Driving,-Fuel_Type,-Transmission)
+```
+
+
+We now retrain the linear model with the new datasets
+```{r}
+model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.,)
+model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
+model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
+model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
+model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
+```
+
+Check again the Vif and notice that things got way better.
+```{r}
+vif_func(model1BR,"Bahrain")
+vif_func(model1KW,"Kuwait")
+vif_func(model1OM,"Oman")
+vif_func(model1SA,"Saudi Arabia")
+vif_func(model1UAE,"UAE")
+```
+
+Now we have cleaned the dataset as much as possible. We don't have variables that suffer from multicollinearity and we have selected the best subset of variables, this seems perfect!!
+
+
+### TREES
+Since neither the linear nor the robust linear model were good, for a reason or another, we could try with regression trees. 
+
+
+--- Notice that we are doing first a single regression tree before doing the random forest
+
+```{r}
+
+tree_constructor <- function(ds) { #this function works only with rpart objects
+  set.seed(1)
+  index <- sample(2, nrow(ds), prob = c(0.8, 0.2), replace = TRUE) #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+
+  Train <- ds[index==1, ] # Train data
+  Test <- ds[index == 2, ] #Test data
+  model1<- Train %>% rpart(log(PriceEURO)~.,., method="anova", model = TRUE) 
+  #we use anova because we are doing regression
+  
+  
+  
+  cp <- which.min(model1$cptable[, "xerror"]) %>% model1$cptable[., "CP"]
+  #we select the min value of the column xerror of the cptable (where cp stands for the cost of pruning )
+  
+  
+  model1_pr <- prune(tree = model1, cp =cp)
+  model1_pr %>% rpart.plot(roundint = TRUE, digits = 4, left=FALSE)
+  
+}
+```
+
+We can now see the best single tree for the 
+```{r}
+tree_constructor(mec_statBR)
+tree_constructor(mec_statKW)
+tree_constructor(mec_statOM)
+tree_constructor(mec_statSA)
+tree_constructor(mec_statUAE)
+```
+
+
+```{r}
+rf_model <- function(ds) {
+  set.seed(1)
+  
+  index <- sample(2, nrow(ds), prob = c(0.8, 0.2), replace = TRUE) #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+
+  Train <- ds[index==1, ] # Train data
+  Test <- ds[index==2, ]
+  Price_test <- ds[index == 2, "PriceEURO"] #Test data
+  
+  ##### BEST MTRY #####
+  
+  # Definisci il controllo per la ricerca dei parametri
+  control <- trainControl(method = "cv",  
+                        number = 10,  #number of folds
+                        search = "random")  
+
+  grid <- data.frame(mtry = c(2, 3, 4))  # Numero di alberi nella random forest
+
+  
+  
+  # Addestra il modello utilizzando la ricerca dei parametri
+  best_mtry_model <- train(log(PriceEURO) ~ .,  # Formula del modello
+                      data = Train,  # Dati di addestramento
+                      method = "rf",  # Utilizza la random forest
+                      trControl = control,
+                      tuneGrid=grid)
+  
+  cat("\nThe best nr of mtry for min error is: ", best_mtry_model$bestTune[1,1])
+  
+  ##### BEST NTREE #####
+  
+  num_alberi <- seq(from= 50, to= 500, by=50)  # Numeri di alberi da testare
+
+  oob_errors <- numeric(length(num_alberi))
+
+  for (i in 1:length(num_alberi)) {
+    modello_rf <- randomForest(log(PriceEURO) ~ ., data = Train, ntree = num_alberi[i], 
+                               proximity = TRUE)
+      oob_preds <- predict(modello_rf, newdata = Train, type = "response", 
+                           predict.all = TRUE)$individual[,1]
+    
+    # Calcola l'OOB error
+    oob_error <- mean((oob_preds - log(Train$PriceEURO))^2)
+    oob_errors[i] <- oob_error
+  }
+
+
+# Trova il numero ottimale di alberi che minimizza l'OOB error
+best_ntree <- num_alberi[which.min(oob_errors)]
+  
+  cat("\nThe best nr of trees for min error is: ", best_ntree)
+  
+  
+  
+  rf1=randomForest(log(PriceEURO)~.,data=Train,ntree=best_ntree,mtry=best_mtry_model$bestTune[1,1], 
+                   importance=TRUE)
+  
+  print(rf1) 
+  plot(rf1)
+  varImpPlot(rf1)
+  
+    yhat <- predict(rf1,newdata = Test)
+  plot (yhat , Price_test %>% log(), xlab="Predicted ln(Price)",ylab = "Actual ln(Price)")
+  
+  abline (0, 1, col="red")
+  cat("Mean squared error: ",mean(yhat - log(Price_test))^2)
+  
+  cat("\nR²: ",sum((yhat - mean(yhat))^2)/sum((log(Price_test) - mean(log(Price_test)))^2))
+}
+```
+
+```{r}
+rf_model(mec_statBR)
+```
+
+```{r}
+rf_model(mec_statKW)
+```
+
+```{r}
+rf_model(mec_statOM)
+```
+
+```{r}
+rf_model(mec_statSA)
+```
+
+```{r}
+rf_model(mec_statUAE)
+```
+
+```{r}
+set.seed(1)
+  index <- sample(2, nrow(mec_statBR), prob = c(0.8, 0.2), replace = TRUE) #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+
+  Train <- mec_statBR[index==1, ] # Train data
+  Test <- mec_statBR[index==2, ]
+rfTest<-randomForest(formula = log(PriceEURO) ~ ., data = Train, ntree = 300)
+print(rfTest)
+```
+
+```{r}
+rfTest %>% attributes()
+```
+
+```{r}
+tuneRF(Train %>% select(-PriceEURO), log(Train[,"PriceEURO"]), 
+       stepFactor = .5,
+       plot = TRUE,
+       ntreeTry = 300,
+       improve = 0.025)
+```
+
+
+
+
+
+
+
+
