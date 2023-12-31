@@ -1,6 +1,6 @@
 # Car Prices in the Arabic Peninsula
 This is the repo for the statistical learning individual project. This research aims to understand which are the variables that influence car prices the most in the Arabic Peninsula and if it is possible to obtain some interesting insights 📈
-![Analysed countries!](/Analysed countries.png)
+![Analysed countries!](/Analysed-countries.png)
 The study is divided in two main parts: 
 - In the first one, I subsetted the dataset into six, creating one dataset for each country -- namely Bahrain, Kuwait, Qatar, Oman, Saudi Arabia and United Arab Emirates. In this way I was able to analyse the prices country-per-country, which allowed me to see clearly the differences. In other words, we can see if in certain nations there are variables that have a greater weight in the determination of the price. For instance we may notice that, say, the variable "speed" \[of the car\] is more important to Saudis rather than to Omani. This makes us conclude that fast cars in Saudi Arabia will cost more than in Oman. 
 - In the second one, I analysed the original dataset to see whether the variable country was - or not - a crucial one in the determination of the price. This analysis can generate results like: "given a specific car, its price in Qatar is higher than in Bahrain just because that car is sold in Qatar".
