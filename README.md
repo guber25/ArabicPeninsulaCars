@@ -1,4 +1,4 @@
-# Arabic Peninsula Car Analysis
+# Arabic Peninsula Car Price Analysis
 This is the repo for the statistical learning individual project. This research aims to understand which are the variables that most influence car prices in the Arabic peninsula and if we can obtain some interesting insights 📈
 
 The study is divided in two main parts: 
