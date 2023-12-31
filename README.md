@@ -1,9 +1,13 @@
 # Arabic Peninsula Car Analysis
-This is the repo for the statistical learning individual project. The aim is to understand which are the variables that most influence the price of cars in so similar yet different countries, like the ones in the Arabic peninsula.
+This is the repo for the statistical learning individual project. The aim is to understand which are the variables that most influence car prices in the Arabic peninsula's countries and if we can make some interesting inference 📈
 
-The analysis consists by supervised and unsupervised statistical learning models, in particular I used regression trees and random forest, with a very nice code, if I have to be honest. I haven't still decided which model to do for unsupervised, probably the PCA but I'll see and I will keep you updated :D
+The analysis is divided in two main parts: 
+- In the first, I subsetted the dataset into six, creating one dataset for each country. In this way I was able to analyse the prices country-per-country, which would have allowed me to see any difference between countries, namely if in certain nations there are variables that have a greater weight in the determination of the price. For instance this analysis may generate results like: "Saudis value more speed than Omani", thus fast cars will be sold at a higher price in Saudi Arabia compared with the one of Oman.
+- In the second, I analysed the original dataset to see whether the variable country was - or not - a crucial factor in the determination of the price. This analysis can generate results like: "given a specific car, its price in Qatar is higher than in Bahrain just because it is sold in Qatar".
 
-Feel free to look at the code and give me feedback of any type. I will provide also an R version of the file and an html markdown R file so that you can see all the analysis even if you do not have R installed.
+To conduct the afore mentioned analyses, I implemented robust regression, regression trees and random forest on both the original dataset and on the dimensionality reduced one obtained by applying the Principal Component Analysis (PCA).
+
+Feel free to look at the R code and to give me any feedback. It is also available an html version of the code with all the results attached together with some comments. It is also available a report in which I deeply explain what I did and interpret the result 💻
 
 The data is taken from the Kaggle dataset "Cars in the middle east": https://www.kaggle.com/datasets/bushnag/cars-in-the-middle-east.
 
