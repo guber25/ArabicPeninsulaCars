@@ -10,39 +10,33 @@ output:
 
 ### Author: Guglielmo Berzano
 
-##### July 2023
+##### October 2023
 
 
 ```{r}
-library(tidyverse)
-library(magrittr)
+library(tidyverse) #increases R dictionary
+library(magrittr) #increases R dictionary
 library(reshape2)
 library(Hmisc)
 library(ggpubr)
-library(corrplot)
+library(corrplot) #creation of the correlation plot
 library(car)
-library(leaps)
-library(estimatr)
-library(robustbase)
-library(olsrr)
-library(rpart)
-library(rpart.plot)
-library(randomForest)
+library(leaps) #best subset
+library(robustbase) #robust regression
+library(olsrr) #chart for residuals
+library(rpart) #regression trees
+library(rpart.plot) #plotting regression trees
+library(randomForest) #random forest algorithm
 library(caret)
 library(ggfortify) #pca plotting
 library(factoextra)#pca plotting
-library(rgl) #3d plots for PCA
-library(xlsx)
+library(rgl) #3d plots for PCA, just for fun
 ```
 
 ```{r}
-me_cars<- read.csv("C:/Users/gugli/Desktop/Università/Materiale/SL/Project/Car in the middle east.csv")
+me_cars<- read.csv("https://raw.githubusercontent.com/guber25/ArabicPeninsulaCars/main/Dataset/Car%20in%20the%20middle%20east.csv")
 head(me_cars)
 ```
-```{r}
-me_cars %>% filter(currency=="QAR") %>% dim()
-```
-
 
 ### DATA PREPROCESSING
 
@@ -111,7 +105,7 @@ me_cars$PriceEURO<-ifelse(me_cars$Currency=="SAR", me_cars$Price*.25,
                           ifelse(me_cars$Currency=="AED", me_cars$Price*.25,
                                  ifelse(me_cars$Currency=="BHD", me_cars$Price*2.44,
                                         ifelse(me_cars$Currency=="KWD", me_cars$Price*2.99,
-                                               ifelse(me_cars$Currency=="OMR", me_cars$Price*2.39, me_cars$price*.25)))))
+                                               ifelse(me_cars$Currency=="OMR", me_cars$Price*2.39, me_cars$Price*.25)))))
 
 #Creating the column Area
 me_cars$Area<-ifelse(me_cars$Currency=="SAR", "Saudi Arabia",
@@ -120,18 +114,34 @@ me_cars$Area<-ifelse(me_cars$Currency=="SAR", "Saudi Arabia",
                                         ifelse(me_cars$Currency=="KWD", "Kuwait",
                                                ifelse(me_cars$Currency=="OMR", "Oman", "Qatar")))))
 me_cars$Area %<>% as.factor
-```
-
-```{r}
-me_cars$Currency %>% unique()
+me_cars %>% head()
 ```
 
 
-
-In this way we obtained a nice dataset to work with.
+Map for first page of the report
 
 ```{r}
-glimpse(me_cars)
+mec_map0 <- data.frame(region=c("Bahrain", "Kuwait", "Qatar", "Oman", "Saudi Arabia", "United Arab Emirates"),
+                       column=c(seq(1,6,1)))
+
+mapdata<-map_data("world")
+mapdata <- left_join(mapdata, mec_map0, by="region") 
+mapdata<-mapdata %>% filter(!is.na(mapdata$column))
+
+ggplot(mapdata, aes(x=long, y=lat, group=group))+
+  
+  geom_polygon(aes(fill=region), col="black")+
+  scale_fill_manual(name="Countries", breaks=c("Bahrain", "Kuwait", "Oman", "Qatar", "Saudi Arabia", "United Arab Emirates"),
+    values=c("azure","skyblue", "deepskyblue", "dodgerblue", "blue3", "navy"))+
+
+  
+  theme(plot.title = element_text(face="bold"),
+    axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        rect = element_blank())
 ```
 
 ### DATA EXPLORATION
@@ -144,12 +154,10 @@ me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Area,-Pric
   theme_minimal()
 ```
 
-```{r}
-me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Area, -Price) %>% plot()
-```
 It is clear that there are a lot of outliers. It is important to remove the most extreme ones.
 The criterion used to decide which is an outlier and which is not is just common sense, i.e. it is impossible that a car is 4500m long.
-#### Outlier removal
+
+### Outlier removal
 
 ```{r}
 
@@ -174,7 +182,7 @@ me_cars[,"Horsepower"][me_cars[,"Horsepower"] %in% value] = NA
 me_cars = drop_na(me_cars)
 
 
-value = me_cars[,"Trunk_Capacity"][me_cars[,"Trunk_Capacity"]>1500]
+value = me_cars[,"Trunk_Capacity"][me_cars[,"Trunk_Capacity"]>1300]
 me_cars[,"Trunk_Capacity"][me_cars[,"Trunk_Capacity"] %in% value] = NA
 me_cars = drop_na(me_cars)
 
@@ -185,12 +193,6 @@ me_cars = drop_na(me_cars)
 #REMOVE DUPLICATES
 me_cars %<>% distinct() 
 ```
-
-```{r}
-me_cars$Area %>% unique()
-```
-
-We see how the Area Qatar is no longer present. This means that all the values related to that Area were actually extreme outliers we had to remove.
 
 
 ```{r}
@@ -207,35 +209,34 @@ geom_histogram(fill="skyblue", color="black") +
     facet_wrap(~key, scales = 'free')+
   theme_minimal()
 ```
-```{r}
-me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency, -Price, -Area) %>% plot()
-```
 
 Now we have obtained a nice dataset to work with.
 
-#### Further data exploration
-```{r}
-me_cars %>% glimpse()
-```
 
-```{r}
-me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Price, -Area) %>% cor() %>% melt() %>% #here I am creating the correlation matrix between each other variable (excluding Sex) and "melting" it to creating a data frame which will be used to then create the ggplot 
-  ggplot(aes(x=Var1, y=Var2, fill=value)) + 
-    geom_tile() +
-    geom_text(aes(Var1, Var2, label = round(value, 2)), size = 3, color="black") +
-      scale_fill_gradient2(low = "lightblue", high = "navy",
-                         limit = c(-1,1), name="Correlation") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), 
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          panel.background = element_blank())
-```
 ```{r}
 me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Price, -Area) %>% cor() %>% corrplot(type = "full", 
          tl.col = "black", tl.srt = 45)
 ```
+
 We see how many variables are quite correlated with each other. This correlation will be better analysed later.
 
+We plot a chart of the correlation between numeric variables and PriceEURO
+
+
+```{r}
+pr_cor<-me_cars %>% select(-Driving,-Fuel_Type,-Transmission,-Name,-Currency,-Price, -Area) %>% cor() %>% data.frame()
+pr_cor<-pr_cor[-15,]
+ggplot(pr_cor, aes(x=pr_cor %>% rownames(), y=PriceEURO))+
+  geom_bar(fill=ifelse(pr_cor$PriceEURO>0,"deepskyblue","red") ,stat="identity")+
+  labs(x="\nVariables",
+       y="Correlation with PriceEURO")+
+  guides(x =  guide_axis(angle = 45))+
+  theme(axis.text = element_text(face="bold"),
+        panel.background = element_rect(fill = "white",
+                                colour = "white"),
+        panel.grid.major = element_line(linewidth = 0.01, linetype = 'solid',
+                                colour = "gray88"))
+```
 
 ## SUPERVISED LEARNING
 
@@ -244,16 +245,20 @@ We see how many variables are quite correlated with each other. This correlation
 ```{r}
 me_cars %>% 
   ggplot(aes(PriceEURO)) +
-  geom_density(linewidth=1)
+  geom_density(linewidth=1)+
+  theme_minimal()
 ```
+
 Not normal at all. We try to take the log
 
 ```{r}
 me_cars %>% 
   ggplot(aes(log(PriceEURO))) +
   geom_density(linewidth=1)+
-  stat_overlay_normal_density(color="red", linetype="dashed", linewidth=1)
+  stat_overlay_normal_density(color="red", linetype="dashed", linewidth=1)+
+  theme_minimal()
 ```
+
 Much better than before! Let's try to make statistical tests on this.
 
 To do so we are going to create a new dataset called "mec_stat", meaning Middle East Cars Stat without some of the useless variable we had in the original dataset.
@@ -262,6 +267,7 @@ Then we create a ds for each of the 5 Areas, namely:
 - Bahrain (BR)
 - Kuwait (KW)
 - Oman (OM)
+- Qatar (QT)
 - Saudi Arabia (SA)
 - United Arab Emirates (UAE)
 
@@ -273,13 +279,16 @@ mec_statSA <- mec_stat %>% filter(Area=="Saudi Arabia") %>% select(-Area)
 mec_statUAE <- mec_stat %>% filter(Area=="UAE") %>% select(-Area)
 mec_statBR <- mec_stat %>% filter(Area=="Bahrain") %>% select(-Area)
 mec_statOM <- mec_stat %>% filter(Area=="Oman") %>% select(-Area)
+mec_statQT <- mec_stat %>% filter(Area=="Qatar") %>% select(-Area)
 mec_statKW <- mec_stat %>% filter(Area=="Kuwait") %>% select(-Area)
 ```
 
+
 ```{r}
-mec_map1 <- data.frame(region=c("Bahrain", "Kuwait", "Oman", "Saudi Arabia", "United Arab Emirates"),
+mec_map1 <- data.frame(region=c("Bahrain", "Kuwait", "Qatar", "Oman", "Saudi Arabia", "United Arab Emirates"),
                        AvgPrice=c(mean((mec_statBR$PriceEURO)),
                                   mean((mec_statKW$PriceEURO)),
+                                  mean((mec_statQT$PriceEURO)),
                                   mean((mec_statOM$PriceEURO)),
                                   mean((mec_statSA$PriceEURO)),
                                   mean((mec_statUAE$PriceEURO))))
@@ -305,19 +314,6 @@ ggplot(mapdata, aes(x=long, y=lat, group=group))+
         rect = element_blank())
 ```
 
-
-```{r}
-qqnorm(mec_stat$PriceEURO)
-qqline(mec_stat$PriceEURO, col="red")
-```
-
-
-```{r}
-qqnorm(log(mec_stat$PriceEURO))
-qqline(log(mec_stat$PriceEURO), col="red")
-```
-Better but pretty useless.
-
 We now take the Shapiro-Wilk test to verify whether the distribution of the variables is normal or not.
 
 ```{r}
@@ -325,6 +321,8 @@ cat("Bahrain")
 shapiro.test(log(mec_statBR$PriceEURO))
 cat("\nKuwait")
 shapiro.test(log(mec_statKW$PriceEURO))
+cat("\nQatar")
+shapiro.test(log(mec_statQT$PriceEURO))
 cat("\nOman")
 shapiro.test(log(mec_statOM$PriceEURO))
 cat("\nSaudi Arabia")
@@ -332,8 +330,9 @@ shapiro.test(log(mec_statSA$PriceEURO))
 cat("\nUnited Arab Emirates")
 shapiro.test(log(mec_statUAE$PriceEURO))
 ```
+
 We can see that, apart from Oman, all the other distributions are not-gaussian.
-So we check for the distribution over the residuals which, by the way, are the important distribution to check for inference with linear regression.
+So we check for the distribution over the residuals which, by the way, is the important distribution to check for making inference with ols.
 
 ```{r}
 model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.)
@@ -348,6 +347,10 @@ model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
 cat("\nOman")
 shapiro.test(model1OM$residuals)
 
+model1QT=mec_statQT %>% lm(log(PriceEURO)~.,.)
+cat("\nQatar")
+shapiro.test(model1QT$residuals)
+
 model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
 cat("\nSaudi Arabia")
 shapiro.test(model1SA$residuals)
@@ -356,34 +359,8 @@ model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
 cat("\nUnited Arab Emirates")
 shapiro.test(model1UAE$residuals)
 ```
+
 We see that Kuwait, Oman and UAE have normally distributed error while the other countries have not. In order to be consistent with the analysis I decided not to consider the linear regression since not all the results where unbiased.
-
-
-#### Could robust regression be the solution??
-What if we use Robust regression to get rid of some of the outliers?
-
-```{r}
-model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.,)
-model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
-model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
-model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
-model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
-```
-
-```{r}
-ols_plot_resid_lev(model1KW)
-```
-
-```{r}
-#ROBUST LINEAR MODELS
-set.seed(1)
-model2BR=mec_statBR %>% lmrob(PriceEURO~.,.)
-model2KW=mec_statKW %>% lmrob(PriceEURO~.,.)
-model2OM=mec_statOM %>% lmrob(PriceEURO~.,.)
-model2SA=mec_statSA %>% lmrob(log(PriceEURO)~.,.)
-model2UAE=mec_statUAE %>% lmrob(PriceEURO~.,.)
-```
-I tried to use the Robust regression but unfortunately the algorithm was not able to converge for some variables. This implies that we do not have access to many information for some variables and that is unacceptable. Another method is needed.
 
 
 #### Further analysis is needed
@@ -391,7 +368,6 @@ I tried to use the Robust regression but unfortunately the algorithm was not abl
 Now we initialize a function for computing the Vif (variance inflation factor) and for plotting its values.
 
 ```{r}
-
 # VIF FUNCTION
 
 vif_func<-function(model_name, country){
@@ -416,7 +392,6 @@ vif_func<-function(model_name, country){
 
 ```
 
-
 We initialize also a function for obtaining the best subset possible.
 
 ```{r}
@@ -436,100 +411,182 @@ We do again the regression for convenience.
 ```{r}
 model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.,)
 model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
+model1QT=mec_statQT %>% lm(log(PriceEURO)~.,.)
 model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
 model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
 model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
 ```
 
-
 First we check the Vif for all the models and...
+
 ```{r}
 vif_func(model1BR,"Bahrain")
 vif_func(model1KW,"Kuwait")
-vif_func(model1SA,"Saudi Arabia")
+vif_func(model1QT,"Qatar")
 vif_func(model1OM,"Oman")
+vif_func(model1SA,"Saudi Arabia")
 vif_func(model1UAE,"United Arab Emirates")
 ```
+
 ... we eliminate the most correlated variables:
 
 ```{r}
-mec_statBR <- mec_statBR %>% select(-Torque, -Horsepower, -Wheelbase, -Length, -Engine_Capacity)
-mec_statKW <- mec_statKW %>% select(-Torque, -Length, -Horsepower, -Engine_Capacity, -Cylinders)
-mec_statSA <- mec_statSA %>% select(-Torque, -Length, -Horsepower, -Engine_Capacity, -Cylinders)
-mec_statOM <- mec_statOM %>% select(-Torque, -Length, -Horsepower,-Engine_Capacity)
-mec_statUAE <- mec_statUAE %>% select(-Torque, -Length, -Horsepower,-Cylinders)
+mec_statBR <- mec_statBR %>% select(-Horsepower, -Engine_Capacity)
+mec_statKW <- mec_statKW %>% select(-Horsepower, -Engine_Capacity)
+mec_statQT <- mec_statQT %>% select(-Horsepower, -Engine_Capacity)
+mec_statSA <- mec_statSA %>% select(-Horsepower, -Engine_Capacity)
+mec_statOM <- mec_statOM %>% select(-Horsepower, -Engine_Capacity)
+mec_statUAE <- mec_statUAE %>% select(-Length, -Horsepower,-Engine_Capacity)
 ```
-
 
 Now, with the leftover variables, we compute the best possible subset for each model and...
 
 ```{r}
-mec_statBR %>% head()
-```
-
-
-```{r}
 mec_statBR %>% best_sub("Bahrain")
 mec_statKW %>% best_sub("Kuwait")
+mec_statQT %>% best_sub("Qatar")
 mec_statOM %>% best_sub("Oman")
 mec_statSA %>% best_sub("Saudi Arabia")
 mec_statUAE %>% best_sub("UAE")
 ```
-... again we remove the not important ones and create some dummies if necessary.
+
+... again we remove the non-important ones and create some dummies if necessary. To be clear, the non-important variables are the ones that at the top of the chart have a white rectangle.
 
 ```{r}
 #Selecting only the important variables
 
 #BAHRAIN
-mec_statBR$DrivingFWD <-ifelse(mec_statBR$Driving=="Front Wheel Drive",1,0)
-mec_statBR$FT_Hybrid <-ifelse(mec_statBR$Fuel_Type=="Hybrid",1,0)
-mec_statBR$TransMan <-ifelse(mec_statBR$Transmission=="Manual",1,0)
-mec_statBR <- mec_statBR %>% select(-Driving, -Fuel_Type, -Transmission, -Seating_Capacity)
+mec_statBR <- mec_statBR %>% select(-Transmission)
 
 #KUWAIT
-mec_statKW$DrivingFWD <-ifelse(mec_statKW$Driving=="Front Wheel Drive",1,0)
-mec_statKW$FT_Hybrid <-ifelse(mec_statKW$Fuel_Type=="Hybrid",1,0)
-mec_statKW <- mec_statKW %>% select(-Driving, -Fuel_Type,-Width)
+mec_statKW <- mec_statKW %>% select(-c(Acceleration_0100, Length))
 
+#QATAR
+mec_statQT$TransMan <-ifelse(mec_statQT$Transmission=="Manual",1,0)
+mec_statQT <- mec_statQT %>% select(-Transmission, -Fuel_Type, -Length)
 
 #OMAN
-mec_statOM$DrivingFWD <-ifelse(mec_statOM$Driving=="Front Wheel Drive",1,0)
-mec_statOM$FT_Petrol <-ifelse(mec_statOM$Fuel_Type=="Hybrid",0,1)
-mec_statOM$TransMan <-ifelse(mec_statOM$Transmission=="Manual",1,0)
-mec_statOM <- mec_statOM %>% select(-Driving, -Transmission, -Fuel_Type)
+mec_statOM$FT_Hybrid <-ifelse(mec_statOM$Fuel_Type=="Hybrid",0,1)
+mec_statOM <- mec_statOM %>% select(-Length, -Transmission, -Fuel_Type)
 
 #Saudi Arabia
 mec_statSA$DrivingFWD <-ifelse(mec_statSA$Driving=="Front Wheel Drive",1,0)
-mec_statSA$FT_Hybrid <-ifelse(mec_statSA$Fuel_Type=="Hybrid",1,0)
-mec_statSA <- mec_statSA %>% select(-Driving, -Liters_For_100km, -Fuel_Type, -Transmission)
+mec_statSA <- mec_statSA %>% select(-Driving, -Transmission, Width)
 
 #United Arab Emirates
 mec_statUAE$DrivingFWD <-ifelse(mec_statUAE$Driving=="Front Wheel Drive",1,0)
-mec_statUAE$FT_Petrol <-ifelse(mec_statUAE$Fuel_Type=="Hybrid",0,1)
-mec_statUAE$TransMan <-ifelse(mec_statUAE$Transmission=="Manual",1,0)
+mec_statUAE$FT_Hybrid <-ifelse(mec_statUAE$Fuel_Type=="Hybrid",1,0)
 mec_statUAE <- mec_statUAE %>% select(-Driving,-Fuel_Type,-Transmission)
 ```
 
-
 We now retrain the linear model with the new datasets
+
 ```{r}
 model1BR=mec_statBR %>% lm(log(PriceEURO)~.,.,)
 model1KW=mec_statKW %>% lm(log(PriceEURO)~.,.)
 model1OM=mec_statOM %>% lm(log(PriceEURO)~.,.)
+model1QT=mec_statQT %>% lm(log(PriceEURO)~.,.)
 model1SA=mec_statSA %>% lm(log(PriceEURO)~.,.)
 model1UAE=mec_statUAE %>% lm(log(PriceEURO)~.,.)
 ```
 
 Check again the Vif and notice that things got way better.
+
 ```{r}
 vif_func(model1BR,"Bahrain")
 vif_func(model1KW,"Kuwait")
 vif_func(model1OM,"Oman")
+vif_func(model1QT,"Qatar")
 vif_func(model1SA,"Saudi Arabia")
 vif_func(model1UAE,"UAE")
 ```
 
 Now we have cleaned the dataset as much as possible. We don't have variables that suffer from multicollinearity and we have selected the best subset of variables, this seems perfect!!
+
+What about using the robust regression since...
+
+```{r}
+ols_plot_resid_lev(model1KW)
+```
+
+... there are so many outliers?
+
+Initializing a function to compute the robust regression. We are not scaling the variable PriceEURO and we are removing, if present, the variable DrivingFWD because it was giving problems.
+
+```{r}
+rob_reg<-function(ds){
+  set.seed(1)
+  index <- sample(2, nrow(ds), prob = c(0.8, 0.2), replace = TRUE) 
+  #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+  
+  PriceEURO<-ds$PriceEURO
+
+  ds<-ds %>% select(where(is.numeric), -PriceEURO) %>% scale() %>% data.frame() %>% cbind(PriceEURO)
+  
+  Train <- ds[index==1, ] # Train data
+  Test <- ds[index == 2, ] #Test data
+  model1<- Train %>% lmrob(log(PriceEURO)~.,.)
+  predicted<-predict(model1, newdata=Test)
+  cat("\nR²: ", 
+      1-(
+        (sum((log(Test$PriceEURO)-predicted)^2))/
+          (sum((log(Test$PriceEURO)-mean(log(Test$PriceEURO)))^2))),"\n")
+  model1 %>% summary() %>% print()
+  model1$coefficients %>% sort(decreasing = TRUE)
+}
+```
+
+From the following cell it is possible to retrieve the most influent variables in the model by looking among the significant ones at those with the highest coefficient in absolute value.
+
+
+```{r}
+cat("BAHRAIN:")
+mec_statBR %>% rob_reg()
+cat("\n\nKUWAIT:")
+mec_statKW  %>% rob_reg()
+cat("\n\nOMAN:")
+mec_statOM %>% rob_reg()
+cat("\n\nQatar:")
+mec_statQT %>% rob_reg()
+cat("\n\nSAUDI ARABIA")
+mec_statSA %>% rob_reg()
+cat("\n\nUAE:")
+mec_statUAE %>% rob_reg()
+```
+
+```{r}
+#Storing the value of the R2 of the robust regression
+R2rr<-c(0.8886621,
+0.8531936,
+0.8713075,
+0.8709802,
+0.8458653,
+0.8914368)
+```
+
+```{r}
+mec_map5 <- data.frame(region=c("Bahrain", "Kuwait", "Oman", "Qatar", "Saudi Arabia", "United Arab Emirates"),
+                       R2rr=R2rr)
+
+mapdata<-map_data("world")
+mapdata <- left_join(mapdata, mec_map5, by="region") 
+mapdata<-mapdata %>% filter(!is.na(mapdata$R2rr))
+
+ggplot(mapdata, aes(x=long, y=lat, group=group))+
+  geom_polygon(aes(fill=R2rr), color="black")+
+  scale_fill_gradient(name="R² for Robust Regression\n", low="#CCFFFF", high="#000066",
+                      limit=c(.84, .90),
+                      breaks=seq(from=.84,
+                                 to=.90,
+                            by=.01))+
+  
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        rect = element_blank())
+```
 
 
 ### TREES
@@ -539,7 +596,6 @@ Since neither the linear nor the robust linear model were good, for a reason or 
 --- Notice that we are doing first a single regression tree before doing the random forest
 
 ```{r}
-
 tree_constructor <- function(ds) { #this function works only with rpart objects
   set.seed(1)
   index <- sample(2, nrow(ds), prob = c(0.8, 0.2), replace = TRUE) #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
@@ -548,7 +604,6 @@ tree_constructor <- function(ds) { #this function works only with rpart objects
   Test <- ds[index == 2, ] #Test data
   model1<- Train %>% rpart(log(PriceEURO)~.,., method="anova", model = TRUE) 
   #we use anova because we are doing regression
-  
   
   
   cp <- which.min(model1$cptable[, "xerror"]) %>% model1$cptable[., "CP"]
@@ -565,6 +620,7 @@ cat("\nR²: ",
       1-(
         (sum((log(Test$PriceEURO)-predicted)^2))/
           (sum((log(Test$PriceEURO)-mean(log(Test$PriceEURO)))^2))),"\n")
+print(data.frame(model1_pr$variable.importance))
   return(1-(
         (sum((log(Test$PriceEURO)-predicted)^2))/
           (sum((log(Test$PriceEURO)-mean(log(Test$PriceEURO)))^2))))
@@ -572,25 +628,23 @@ cat("\nR²: ",
 }
 ```
 
-We can now see the best single tree for the 
+
+We can now see the best single tree for each country
+
+
 ```{r}
-R2Tree<- c(tree_constructor(mec_statBR),
+R2Tree<- c(tree_constructor(mec_statBR), #create a variable R2Tree for the Rsquared
 tree_constructor(mec_statKW),
 tree_constructor(mec_statOM),
+tree_constructor(mec_statQT),
 tree_constructor(mec_statSA),
 tree_constructor(mec_statUAE))
 ```
 
-```{r}
-tree_constructor(mec_statBR)
-tree_constructor(mec_statKW)
-tree_constructor(mec_statOM)
-tree_constructor(mec_statSA)
-tree_constructor(mec_statUAE)
-```
+
 
 ```{r}
-mec_map2 <- data.frame(region=c("Bahrain", "Kuwait", "Oman", "Saudi Arabia", "United Arab Emirates"),
+mec_map2 <- data.frame(region=c("Bahrain", "Kuwait", "Oman", "Qatar", "Saudi Arabia", "United Arab Emirates"),
                        R2Tree=R2Tree)
 
 mapdata<-map_data("world")
@@ -600,10 +654,10 @@ mapdata<-mapdata %>% filter(!is.na(mapdata$R2Tree))
 ggplot(mapdata, aes(x=long, y=lat, group=group))+
   geom_polygon(aes(fill=R2Tree), color="black")+
   scale_fill_gradient(name="R² for Regression Trees\n", low="#CCFFFF", high="#000066",
-                      limit=c(.75, .85),
-                      breaks=seq(from=.75,
-                                 to=.85,
-                            by=.01))+
+                      limit=c(.70, .90),
+                      breaks=seq(from=.70,
+                                 to=.90,
+                            by=.04))+
   
   theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
@@ -613,7 +667,9 @@ ggplot(mapdata, aes(x=long, y=lat, group=group))+
         rect = element_blank())
 ```
 
+Not bad but this is the worst model obtained so far.
 
+### Random Forest algorithm
 
 ```{r}
 rf_model <- function(ds, country) {
@@ -633,8 +689,6 @@ rf_model <- function(ds, country) {
 
   grid <- data.frame(mtry = c(2, 3, 4))  # 
 
-  
-  
   # train the model
   best_mtry_model <- train(log(PriceEURO) ~ .,  
                       data = Train, 
@@ -648,21 +702,20 @@ rf_model <- function(ds, country) {
   
   tree_nr <- seq(from= 50, to= 500, by=50)  # number of trees to test
 
-  MSE_test<-c()
+  MSE_train<-c()
   
   for (i in 1:length(tree_nr)) {
-    model_rf <- randomForest(log(PriceEURO) ~ ., data = Train, ntree = num_alberi[i], 
-                               proximity = TRUE)
     
-      test_preds <- predict(model_rf, newdata = Test, type = "response", 
-                           predict.all = TRUE)$individual[,1] #test the model
+    model_rf <- randomForest(log(PriceEURO) ~ ., data = Train, ntree = tree_nr[i],
+                             mtry=best_mtry_model$bestTune[1,1])
     
-    MSE_test[i] <- mean((test_preds - log(Test$PriceEURO))^2) #compute the mean squared error
+    MSE_train<-append(MSE_train, model_rf$mse[i]) #append the mse to the vector
   }
 
 
-# OOB error minimizer
-best_ntree <- tree_nr[which.min(MSE_test)]
+# MSE error minimizer
+best_ntree <- min(MSE_train[MSE_train<0.09 & MSE_train>0.04]) %>% match(MSE_train) %>% tree_nr[.] #best_ntree is the number such that the MSE is within 0.05 and 0.09 to avoid overfitting. These values have been found thanks to empirical tests
+  
   
   cat("\nThe best nr of trees for min error is: ", best_ntree)
   
@@ -692,29 +745,42 @@ best_ntree <- tree_nr[which.min(MSE_test)]
 
 
 ```{r}
+#NEW
 rf_model(mec_statBR, "Bahrain")
 ```
 
+
+
 ```{r}
+#NEW
 rf_model(mec_statKW, "Kuwait")
 ```
 
 ```{r}
+#NEW
 rf_model(mec_statOM, "Oman")
 ```
 
 ```{r}
+#NEW
+rf_model(mec_statQT, "Qatar")
+```
+
+```{r}
+#NEW
 rf_model(mec_statSA, "Saudi Arabia")
 ```
 
 ```{r}
+#NEW
 rf_model(mec_statUAE, "United Arab Emirates")
 ```
 
-```{r}
-R2rf<-c(0.9334361, 0.9237522, 0.9198963, 0.9283236, 0.9303174)
 
-mec_map3 <- data.frame(region=c("Bahrain", "Kuwait", "Oman", "Saudi Arabia", "United Arab Emirates"),
+```{r}
+R2rf<-c(0.9458579, 0.9260215,0.9434955, 0.9389488, 0.9077597, 0.9359294)
+
+mec_map3 <- data.frame(region=c("Bahrain", "Kuwait", "Qatar", "Oman", "Saudi Arabia", "United Arab Emirates"),
                        R2rf=R2rf)
 
 mapdata<-map_data("world")
@@ -724,8 +790,8 @@ mapdata<-mapdata %>% filter(!is.na(mapdata$R2rf))
 ggplot(mapdata, aes(x=long, y=lat, group=group))+
   geom_polygon(aes(fill=R2rf), color="black")+
   scale_fill_gradient(name="R² for Random Forest\n", low="#CCFFFF", high="#000066",
-                      limit=c(.91, .95),
-                      breaks=seq(from=.91,
+                      limit=c(.90, .95),
+                      breaks=seq(from=.90,
                                  to=.95,
                             by=.01))+
   
@@ -737,34 +803,43 @@ ggplot(mapdata, aes(x=long, y=lat, group=group))+
         rect = element_blank())
 ```
 
+The random forest is clearly the best model even though it is a bit slow.
+
 ```{r}
 R2df<-left_join(mec_map2,mec_map3, by="region")
-R2best<-c()
-R2best_mod<-c()
-for (i in (1:dim(R2df)[1])){
-  R2best[i]<-max(R2df[i,2],R2df[i,3])
-  if (R2df[i,2]>R2df[i,3]) {
-    R2best_mod[i] <- "Tree"
-  } else {
-    R2best_mod[i] <- "Random Forest"
-    }
-}
-R2df$R2best<-R2best
-R2df$R2best_model<-R2best_mod
-levels(R2df$R2best_model) <- c("Random Forest", "Regression Tree")
-R2df$R2best_model %<>% as.factor
+R2df$R2rr<-R2rr
+
+R2best_Tr_rr<-c()
+for (i in (1:6)){
+  
+  if (R2df[i,2]>R2df[i,4]){
+    
+  R2best_Tr_rr[i]<-"Regression Tree"
+  } else if (R2df[i,2]==R2df[i,4]) {
+    R2best_Tr_rr[i]<-"Tie"
+  }else {
+      R2best_Tr_rr[i]<-"Robust Regression"
+  }
+  
+  }
+  
+R2df$R2best_Tr_rr<-R2best_Tr_rr
+
+R2df$R2best_Tr_rr %<>% as.factor
 R2df
 ```
 
+In this map we are comparing R2 to see which is the highest
 
 ```{r}
 mapdata<-map_data("world")
 mapdata <- left_join(mapdata, R2df, by="region") 
-mapdata<-mapdata %>% filter(!is.na(mapdata$R2best_model))
+mapdata<-mapdata %>% filter(!is.na(mapdata$R2best_Tr_rr))
 
 ggplot(mapdata, aes(x=long, y=lat, group=group))+
-  geom_polygon(aes(fill=R2best_model), color="black")+
-    scale_fill_manual(name="Best model according to R²:\n",labels=c("Random Forest", "Regression Tree"),values=c("#CCFFFF", "#000066"))+
+  geom_polygon(aes(fill=R2best_Tr_rr), color="white")+
+    scale_fill_manual(name="Best model according to R²:\n",labels=c("Robust Regression", "Regression Tree","Tie"),
+                      values=c( "#000066", "#CCFFFF", "lightgrey"))+
   theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank(),
@@ -772,7 +847,6 @@ ggplot(mapdata, aes(x=long, y=lat, group=group))+
         axis.title.y = element_blank(),
         rect = element_blank())
 ```
-
 
 
 
@@ -785,13 +859,17 @@ For this section I decided to use the PCA. Since the PCA works better with corre
 mec_statSA2 <- mec_stat %>% filter(Area=="Saudi Arabia") %>% select(-Area)
 mec_statUAE2 <- mec_stat %>% filter(Area=="UAE") %>% select(-Area)
 mec_statBR2 <- mec_stat %>% filter(Area=="Bahrain") %>% select(-Area)
+mec_statQT2 <- mec_stat %>% filter(Area=="Qatar") %>% select(-Area)
 mec_statOM2 <- mec_stat %>% filter(Area=="Oman") %>% select(-Area)
 mec_statKW2 <- mec_stat %>% filter(Area=="Kuwait") %>% select(-Area)
 ```
 
+
 ```{r}
-mec_statSA2 %>% glimpse()
+mec_statSA2 %>% glimpse() #for example
 ```
+
+Some data cleaning not to have categorical variables
 
 
 ```{r}
@@ -805,7 +883,7 @@ mec_statBR2$TransAuto <- ifelse(mec_statBR2$Transmission=="Automatic", 1,0)
 mec_statBR2$FTHybr <- ifelse(mec_statBR2$Fuel_Type=="Hybrid", 1,0)
 mec_statBR2$FTPetr <- ifelse(mec_statBR2$Fuel_Type=="Petrol", 1,0)
 mec_statBR2$FTDiesel <- ifelse(mec_statBR2$Fuel_Type=="Diesel", 1,0)
-mec_statBR2 <- mec_statBR2 %>% select(-c(Driving, Transmission, Fuel_Type))
+mec_statBR2 <- mec_statBR2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
 
 #KUWAIT
 mec_statKW2$DrivingFWD <- ifelse(mec_statKW2$Driving=="Front Wheel Drive", 1,0)
@@ -817,7 +895,19 @@ mec_statKW2$TransAuto <- ifelse(mec_statKW2$Transmission=="Automatic", 1,0)
 mec_statKW2$FTHybr <- ifelse(mec_statKW2$Fuel_Type=="Hybrid", 1,0)
 mec_statKW2$FTPetr <- ifelse(mec_statKW2$Fuel_Type=="Petrol", 1,0)
 mec_statKW2$FTDiesel <- ifelse(mec_statKW2$Fuel_Type=="Diesel", 1,0)
-mec_statKW2 <- mec_statKW2 %>% select(-c(Driving, Transmission, Fuel_Type))
+mec_statKW2 <- mec_statKW2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
+
+#QATAR
+mec_statQT2$DrivingFWD <- ifelse(mec_statQT2$Driving=="Front Wheel Drive", 1,0)
+mec_statQT2$DrivingAWD <- ifelse(mec_statQT2$Driving=="All Wheel Drive", 1,0)
+mec_statQT2$DrivingRWD <- ifelse(mec_statQT2$Driving=="Rear Wheel Drive", 1,0)
+mec_statQT2$TransMan <- ifelse(mec_statQT2$Transmission=="Manual", 1,0)
+mec_statQT2$TransCVT <- ifelse(mec_statQT2$Transmission=="CVT", 1,0)
+mec_statQT2$TransAuto <- ifelse(mec_statQT2$Transmission=="Automatic", 1,0)
+mec_statQT2$FTHybr <- ifelse(mec_statQT2$Fuel_Type=="Hybrid", 1,0)
+mec_statQT2$FTPetr <- ifelse(mec_statQT2$Fuel_Type=="Petrol", 1,0)
+mec_statQT2$FTDiesel <- ifelse(mec_statQT2$Fuel_Type=="Diesel", 1,0)
+mec_statQT2 <- mec_statQT2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
 
 #OMAN
 mec_statOM2$DrivingFWD <- ifelse(mec_statOM2$Driving=="Front Wheel Drive", 1,0)
@@ -829,7 +919,7 @@ mec_statOM2$TransAuto <- ifelse(mec_statOM2$Transmission=="Automatic", 1,0)
 mec_statOM2$FTHybr <- ifelse(mec_statOM2$Fuel_Type=="Hybrid", 1,0)
 mec_statOM2$FTPetr <- ifelse(mec_statOM2$Fuel_Type=="Petrol", 1,0)
 mec_statOM2$FTDiesel <- ifelse(mec_statOM2$Fuel_Type=="Diesel", 1,0)
-mec_statOM2 <- mec_statOM2 %>% select(-c(Driving, Transmission, Fuel_Type))
+mec_statOM2 <- mec_statOM2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
 
 #SAUDI ARABIA
 mec_statSA2$DrivingFWD <- ifelse(mec_statSA2$Driving=="Front Wheel Drive", 1,0)
@@ -841,7 +931,7 @@ mec_statSA2$TransAuto <- ifelse(mec_statSA2$Transmission=="Automatic", 1,0)
 mec_statSA2$FTHybr <- ifelse(mec_statSA2$Fuel_Type=="Hybrid", 1,0)
 mec_statSA2$FTPetr <- ifelse(mec_statSA2$Fuel_Type=="Petrol", 1,0)
 mec_statSA2$FTDiesel <- ifelse(mec_statSA2$Fuel_Type=="Diesel", 1,0)
-mec_statSA2 <- mec_statSA2 %>% select(-c(Driving, Transmission, Fuel_Type))
+mec_statSA2 <- mec_statSA2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
 
 #UNITED ARAB EMIRATES
 mec_statUAE2$DrivingFWD <- ifelse(mec_statUAE2$Driving=="Front Wheel Drive", 1,0)
@@ -853,50 +943,16 @@ mec_statUAE2$TransAuto <- ifelse(mec_statUAE2$Transmission=="Automatic", 1,0)
 mec_statUAE2$FTHybr <- ifelse(mec_statUAE2$Fuel_Type=="Hybrid", 1,0)
 mec_statUAE2$FTPetr <- ifelse(mec_statUAE2$Fuel_Type=="Petrol", 1,0)
 mec_statUAE2$FTDiesel <- ifelse(mec_statUAE2$Fuel_Type=="Diesel", 1,0)
-mec_statUAE2 <- mec_statUAE2 %>% select(-c(Driving, Transmission, Fuel_Type))
+mec_statUAE2 <- mec_statUAE2 %>% select(-c(Driving, Transmission, Fuel_Type, PriceEURO))
 ```
 
 
-```{r}
-testpca <- mec_statBR2 %>% select(-PriceEURO) %>% prcomp(scale. = TRUE, center = TRUE)
-```
+Pca 3D plot for fun:
 
-```{r}
-testpca
-```
-
-```{r}
-test %>% summary()
-```
-
-```{r}
-mec_statBR %>% glimpse()
-```
-
-```{r}
-mec_statBR %>% select(-c(PriceEURO)) %>% prcomp(scale. = TRUE, center = TRUE) %>% summary()
-```
-
-```{r}
-pcabr2<- mec_statBR2 %>% prcomp(scale.=TRUE, center = TRUE) 
-pcabr2%>% fviz_pca_var(col.var = "contrib",gradient.col=c("red", "blue", "green"))
-```
-
-```{r}
-pcabr2
-```
-
-
-```{r}
-mec_statBR2 %>% prcomp(scale. = TRUE, center = TRUE) %>% fviz_eig(addlabels = TRUE, choice = "eigenvalue", main = "Eigenvalues for PCA Bahrain") +
-         geom_hline(yintercept=1, 
-         linetype="dashed", 
-         color = "red")
-```
 ```{r}
 pcatest <- mec_statBR2 %>% prcomp(scale. = TRUE, center = TRUE)
 
-#3D plot just for fun
+#3D plot just for fun, not rendered in the html document unfortunately
 scores=pcatest$x[,1:3] %>% as.data.frame()
 plot3d(scores)
 
@@ -912,41 +968,276 @@ for (i in 1:nrow(pcatest$rotation)) {
 }
  
 lines3d(coords*1000, 
-        col="blue", 
+        col="orange", 
         lwd=1)
 ```
+
+
+PCA function: 
+
+Here we apply the Principal component analysis and we select up to the 7th principal component which is the last one with eigenvalues > 1 meaning that each principal component explains at least as much information as one column in the original datasets.
 
 ```{r}
 pca<- function(ds, country){
   pca1 <- ds %>% prcomp(scale. = TRUE, center = TRUE)
-    eigenv_plot<-fviz_eig(pca1, addlabels = TRUE, choice = "eigenvalue",
-             main = paste("Eigenvalues for PCA for ", country)) +
-         geom_hline(yintercept=1, 
-         linetype="dashed", 
-         color = "red")
+    
     var <- pca1 %>% get_pca_var()
-  corplot<-corrplot(var$cos2, is.corr = FALSE)
-  return(eigenv_plot)
+    
+  corplot<-corrplot(var$cor[,1:7], is.corr = FALSE, col.lim = c(-1,1),cl.align.text = "l",tl.col = "black" )
+  
+
+  contrib<-pca1 %>% fviz_contrib(choice = "var", axes = 1)+ggtitle(paste("Contribution of variables to 1st Principal component - ",country))
+
+    pca1 %>% fviz_pca_var(col.var = pca1$rotation[,3], repel = TRUE)+
+    ggtitle(paste(country, " PCA"))+
+    scale_color_gradient2(name="Correlation with\nthe third component",limits=c(-1,1), low="red3",mid="deepskyblue",high="navy") #circle correlation plot 
+    
+    return(contrib)
 }
 ```
+
+
+PCA results:
 
 
 ```{r}
 pca(mec_statBR2, "Bahrain")
 pca(mec_statKW2, "Kuwait")
 pca(mec_statOM2, "Oman")
+pca(mec_statQT2, "Qatar")
 pca(mec_statSA2, "Saudi Arabia")
 pca(mec_statUAE2, "United Arab Emirates")
 ```
 
+
 ```{r}
-mec_statSA2 %>% 
+pr_lm <- function(ds_pc,ds_original, request="default"){
+  
+  if (is.element("PriceEURO", ds_pc %>% colnames())){
+    PriceEURO<- ds_pc$PriceEURO
+    ds_pc$PriceEURO<-NULL
+  }
+  
+  #PC computation
+  pc<-ds_pc %>% prcomp(scale. = TRUE, center=TRUE)
+  sign_var<-pc$sdev %>% data.frame() %>% filter(.>1) %>% dim() %>% .[1]
+  pc<-pc$x[,1:sign_var] %>% data.frame()
+  
+  
+ if (class(ds_original)=="data.frame"){
+   pc$PriceEURO<-ds_original$PriceEURO
+ } else {
+   pc$PriceEURO<-PriceEURO
+ }
+  
+  
+  if (request=="summary"){
+    lm_pc=pc %>% lm(log(PriceEURO)~.,.)
+    lm_pc %>% summary() %>% return()
+    
+    
+  } else if (request=="tree"){
+  tree_constructor(pc)
+
+
+  }else if (request=="rf") {
+  rf_model(pc,"Whatever")
+    } else {
+    set.seed(1)
+  
+  index <- sample(2, nrow(pc), prob = c(0.8, 0.2), replace = TRUE) #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+
+  Train <- pc[index==1, ] # Train data
+  Test <- pc[index==2, ]
+  lm_pc=Train %>% lm(log(PriceEURO)~.,.)
+  yhat <- predict(lm_pc, newdata=Test)
+  
+  #in this case you return the R^2
+  return(1-(
+        (sum((log(Test$PriceEURO)-yhat)^2))/
+        (sum((log(Test$PriceEURO)-mean(log(Test$PriceEURO)))^2))))
+  }
+  
+}
+```
+
+
+
+```{r}
+pr_lm(mec_statBR2, mec_statBR,"tree")
+pr_lm(mec_statKW2, mec_statKW,"tree")
+pr_lm(mec_statQT2, mec_statQT,"tree")
+pr_lm(mec_statOM2, mec_statOM,"tree")
+pr_lm(mec_statSA2, mec_statSA,"tree")
+pr_lm(mec_statUAE2, mec_statUAE,"tree")
 ```
 
 
 ```{r}
-var <- testpca %>% get_pca_var()
-corrplot(var$cos2, is.corr = TRUE, col.lim = c(0,1))
+pr_lm(mec_statBR2, mec_statBR,"summary")
+pr_lm(mec_statKW2, mec_statKW,"summary")
+pr_lm(mec_statQT2, mec_statQT,"summary")
+pr_lm(mec_statOM2, mec_statOM,"summary")
+pr_lm(mec_statSA2, mec_statSA,"summary")
+pr_lm(mec_statUAE2, mec_statUAE,"summary")
 ```
 
+
+```{r}
+R2pr_lm<- c(pr_lm(mec_statBR2, mec_statBR),
+pr_lm(mec_statKW2, mec_statKW),
+pr_lm(mec_statQT2, mec_statQT),
+pr_lm(mec_statOM2, mec_statOM),
+pr_lm(mec_statSA2, mec_statSA),
+pr_lm(mec_statUAE2, mec_statUAE))
+R2pr_lm
+```
+
+
+```{r}
+mec_map5 <- data.frame(region=c("Bahrain", "Kuwait", "Qatar", "Oman", "Saudi Arabia", "United Arab Emirates"),
+                       R2pc_lm=R2pr_lm)
+
+mapdata<-map_data("world")
+mapdata <- left_join(mapdata, mec_map5, by="region") 
+mapdata<-mapdata %>% filter(!is.na(mapdata$R2pc_lm))
+
+ggplot(mapdata, aes(x=long, y=lat, group=group))+
+  geom_polygon(aes(fill=R2pc_lm), color="black")+
+  scale_fill_gradient(name="R² for the linear model run on\nthe significant PCs\n", low="#CCFFFF", high="#000066",
+                      limit=c(.82, .87),
+                      breaks=seq(from=.82,
+                                 to=.87,
+                            by=.01))+
+  
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        rect = element_blank())
+```
+
+
+```{r}
+R2df$R2pca<-R2pr_lm
+
+R2df <- R2df %>% select("region", "R2Tree", "R2rr", "R2pca", "R2rf", "R2best_Tr_rr")
+R2df
+```
+
+
+```{r}
+pr_lm(mec_statBR2, mec_statBR,"rf")
+pr_lm(mec_statKW2, mec_statKW,"rf")
+pr_lm(mec_statQT2, mec_statQT,"rf")
+pr_lm(mec_statOM2, mec_statOM,"rf")
+pr_lm(mec_statSA2, mec_statSA,"rf")
+pr_lm(mec_statUAE2, mec_statUAE,"rf")
+```
+
+
+## Analysis of the entire dataset!
+
+
+```{r}
+mec_stat %>% select(-Horsepower, -Engine_Capacity) %>% tree_constructor()
+```
+
+
+I created a new function so that I re inserted the variable Area in the dataset. Not the smartest thing to do but it works.
+
+```{r}
+rob_reg1<-function(ds){
+  set.seed(1)
+  index <- sample(2, nrow(ds), prob = c(0.8, 0.2), replace = TRUE) 
+  #so we give to each observation a prob of 80% of falling into the train and 20% of falling into the test
+  
+  PriceEURO<-ds$PriceEURO
+  Area_<-ds$Area
+  
+  
+  # difference with the rob_reg function !!
+  ds<-ds %>% select(where(is.numeric), -PriceEURO) %>% scale() %>% data.frame() %>% cbind(PriceEURO)
+  ds<- ds %>% cbind(Area_)
+  
+  Train <- ds[index==1, ] # Train data
+  Test <- ds[index == 2, ] #Test data
+  model1<- Train %>% lmrob(log(PriceEURO)~.,.)
+  predicted<-predict(model1, newdata=Test)
+  cat("\nR²: ", 
+      1-(
+        (sum((log(Test$PriceEURO)-predicted)^2))/
+          (sum((log(Test$PriceEURO)-mean(log(Test$PriceEURO)))^2))),"\n")
+  model1 %>% summary() %>% print()
+  model1$coefficients %>% sort(decreasing = TRUE)
+}
+```
+
+
+```{r}
+mec_stat %>% select(-Horsepower, -Engine_Capacity) %>% rob_reg1()
+```
+
+
+```{r}
+mec_stat %>% select(-Horsepower, -Engine_Capacity) %>% rf_model(., "Big dataset")
+```
+
+
+```{r}
+pcBR<- cbind(mec_statBR2, mec_statBR$PriceEURO)
+pcBR$Area<-0
+pcBR<-pcBR %>% rename("PriceEURO"="mec_statBR$PriceEURO")
+
+
+pcKW<-cbind(mec_statKW2, mec_statKW$PriceEURO)
+pcKW$Area<-1
+pcKW<-pcKW %>% rename("PriceEURO"="mec_statKW$PriceEURO")
+
+pcQT<-cbind(mec_statQT2, mec_statQT$PriceEURO)
+pcQT$Area<-2
+pcQT<-pcQT %>% rename("PriceEURO"="mec_statQT$PriceEURO")
+
+pcOM<-cbind(mec_statOM2, mec_statOM$PriceEURO)
+pcOM$Area<-3
+pcOM<-pcOM %>% rename("PriceEURO"="mec_statOM$PriceEURO")
+
+pcSA<-cbind(mec_statSA2, mec_statSA$PriceEURO)
+pcSA$Area<-4
+pcSA<-pcSA %>% rename("PriceEURO"="mec_statSA$PriceEURO")
+
+pcUAE<-cbind(mec_statUAE2, mec_statUAE$PriceEURO)
+pcUAE$Area<-5
+pcUAE<-pcUAE %>% rename("PriceEURO"="mec_statUAE$PriceEURO")
+
+mec_statPC <- rbind(pcBR, pcKW, pcQT, pcOM,pcSA,pcUAE)
+
+```
+
+
+```{r}
+mec_statPC %>% pr_lm(.,0,request="default")
+```
+
+
+```{r}
+mec_statPC %>% pr_lm(.,0,request="tree")
+```
+
+
+```{r}
+mec_statPC %>% pr_lm(.,0,request="rf")
+```
+
+```{r}
+pca(mec_statPC %>% select(-Horsepower, - Engine_Capacity, -PriceEURO), "General model")
+```
+
+
+
+```{r}
+mec_statPC %>% select(-Horsepower, - Engine_Capacity, -PriceEURO) %>% prcomp(scale. = TRUE, center = TRUE) %>% fviz_eig(choice = "variance",addlabels=TRUE,xlab = "Principal components",
+                  main = "" ,ylab = "",ncp=7,barfill = "deepskyblue", linecolor = "blue") + theme_minimal()
+```
 
